@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JS Income Tracker</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Helvetica Neue',sans-serif;background:#F1EFE8;color:#2C2C2A;min-height:100vh}
+
+/* Setup screen */
+#setupScreen{display:none;position:fixed;inset:0;background:#F1EFE8;z-index:100;align-items:center;justify-content:center}
+#setupScreen.show{display:flex}
+.setup-box{background:#fff;border-radius:12px;padding:40px;max-width:480px;width:90%}
+.setup-box h1{font-size:20px;font-weight:500;margin-bottom:8px}
+.setup-box p{font-size:13px;color:#888780;line-height:1.6;margin-bottom:24px}
+.setup-box input{width:100%;border:1px solid #D3D1C7;border-radius:6px;padding:10px 12px;font-size:14px;font-family:monospace;outline:none;margin-bottom:12px}
+.setup-box input:focus{border-color:#1D9E75}
+.setup-box button{background:#2C2C2A;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;cursor:pointer;width:100%}
+.setup-box button:hover{background:#444441}
+.setup-error{font-size:12px;color:#D85A30;margin-top:8px;display:none}
+
+/* Loading */
+#loadingScreen{display:none;position:fixed;inset:0;background:#F1EFE8;z-index:99;align-items:center;justify-content:center}
+#loadingScreen.show{display:flex}
+.loading-msg{font-size:14px;color:#888780}
+
+header{background:#2C2C2A;padding:18px 32px;display:flex;justify-content:space-between;align-items:center}
+header h1{color:#fff;font-size:17px;font-weight:500}
+.header-right{display:flex;align-items:center;gap:16px}
+header span{color:#888780;font-size:12px}
+.sync-status{font-size:11px;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,0.1);color:#888780}
+.sync-status.saving{color:#FAC775}
+.sync-status.saved{color:#1D9E75}
+.sync-status.error{color:#D85A30}
+
+.container{max-width:960px;margin:0 auto;padding:28px 24px}
+.section-label{font-size:11px;font-weight:500;color:#888780;letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px}
+
+.top-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:28px}
+.stat-card{background:#fff;border-radius:10px;padding:18px 20px}
+.stat-card .label{font-size:12px;color:#888780;margin-bottom:6px}
+.stat-card .val{font-size:26px;font-weight:500}
+.stat-card .sub{font-size:12px;color:#888780;margin-top:4px}
+
+.week-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+.week-card{background:#fff;border-radius:10px;padding:16px;position:relative}
+.week-card.empty{background:#F8F7F4;border:1.5px dashed #D3D1C7}
+.wk-label{font-size:11px;font-weight:500;color:#888780;margin-bottom:12px;letter-spacing:.04em;text-transform:uppercase}
+.week-card.empty .wk-label{color:#B4B2A9}
+.wrow{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #F1EFE8}
+.wrow:last-of-type{border-bottom:none}
+.wrow .k{font-size:11px;color:#888780}
+.wrow .v{font-size:12px;font-weight:500}
+.wtotal{display:flex;justify-content:space-between;margin-top:10px;padding-top:10px;border-top:1.5px solid #F1EFE8}
+.wtotal .k{font-size:12px;font-weight:500}
+.wtotal .v{font-size:13px;font-weight:500}
+.wvar{font-size:11px;margin-top:5px;text-align:right}
+.pos{color:#1D9E75}.neg{color:#D85A30}
+.del-btn{position:absolute;top:10px;right:10px;background:none;border:none;color:#D3D1C7;cursor:pointer;font-size:13px;padding:2px 5px}
+.del-btn:hover{color:#D85A30}
+.empty-msg{color:#B4B2A9;font-size:12px;margin-top:16px}
+
+.chart-wrap{background:#fff;border-radius:10px;padding:24px;margin-bottom:24px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin-bottom:20px}
+.legend span{display:flex;align-items:center;gap:5px;font-size:12px;color:#5F5E5A}
+.dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.dash-line{width:16px;height:0;border-top:2px dashed #D85A30;flex-shrink:0;display:inline-block}
+
+.costs-wrap{background:#fff;border-radius:10px;margin-bottom:24px;overflow:hidden}
+.costs-hdr{display:flex;justify-content:space-between;align-items:center;padding:18px 20px;cursor:pointer;user-select:none}
+.costs-hdr h2{font-size:14px;font-weight:500}
+.costs-hdr .badge{font-size:12px;color:#888780}
+.chevron{font-size:11px;color:#B4B2A9;display:inline-block;transition:transform .2s;margin-left:10px}
+.costs-hdr.open .chevron{transform:rotate(180deg)}
+.costs-body{display:none;padding:0 20px 20px;border-top:1px solid #F1EFE8}
+.costs-body.open{display:block}
+.cgroup{margin-top:16px}
+.cgroup-hdr{display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;padding:4px 0}
+.cgroup-hdr .name{font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px}
+.cgroup-hdr .amt{font-size:12px;color:#5F5E5A}
+.chev2{font-size:9px;color:#B4B2A9;transition:transform .15s}
+.cgroup-hdr.open2 .chev2{transform:rotate(90deg)}
+.citems{display:none;padding:6px 0 0 14px}
+.citems.open{display:block}
+.citem{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #F8F7F4}
+.citem .k{font-size:12px;color:#888780}
+.citem .v{font-size:12px}
+.cdivider{height:1px;background:#F1EFE8;margin:14px 0}
+.ctotal{display:flex;justify-content:space-between;padding:3px 0}
+.ctotal span{font-size:13px;font-weight:500}
+.cnote{font-size:11px;color:#B4B2A9;margin-top:12px;line-height:1.6}
+
+/* Actions row */
+.actions-row{display:flex;gap:12px;margin-bottom:24px}
+.action-btn{background:#fff;border:1px solid #D3D1C7;border-radius:8px;padding:10px 18px;font-size:13px;cursor:pointer;color:#2C2C2A;display:flex;align-items:center;gap:6px}
+.action-btn:hover{background:#F8F7F4}
+.action-btn.danger{color:#D85A30;border-color:#F0997B}
+.action-btn.danger:hover{background:#FAECE7}
+
+.add-wrap{background:#fff;border-radius:10px;padding:24px}
+.add-wrap h2{font-size:15px;font-weight:500;margin-bottom:18px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-size:12px;color:#5F5E5A}
+.field input{border:1px solid #D3D1C7;border-radius:6px;padding:9px 10px;font-size:14px;background:#FAFAF8;outline:none}
+.field input:focus{border-color:#1D9E75}
+.full{grid-column:1/-1}
+.preview{background:#F8F7F4;border-radius:6px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#5F5E5A;line-height:1.9}
+.preview strong{color:#2C2C2A}
+button.submit{background:#2C2C2A;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;cursor:pointer}
+button.submit:hover{background:#444441}
+
+@media(max-width:680px){
+  .week-grid{grid-template-columns:repeat(2,1fr)}
+  .top-stats,.form-grid{grid-template-columns:1fr}
+  .actions-row{flex-wrap:wrap}
+}
+</style>
+</head>
+<body>
+
+<!-- Setup screen -->
+<div id="setupScreen">
+  <div class="setup-box">
+    <h1>JS Income Tracker</h1>
+    <p>Paste your GitHub Personal Access Token to connect. This is stored only in your browser and never sent anywhere except GitHub.</p>
+    <input type="password" id="tokenInput" placeholder="ghp_..." />
+    <button onclick="saveToken()">Connect</button>
+    <p class="setup-error" id="setupError">Could not connect. Check the token and try again.</p>
+  </div>
+</div>
+
+<!-- Loading screen -->
+<div id="loadingScreen">
+  <p class="loading-msg">Loading your data...</p>
+</div>
+
+<header>
+  <h1>JS Income Tracker</h1>
+  <div class="header-right">
+    <span>$5,000 / month goal</span>
+    <span class="sync-status" id="syncStatus">synced</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="section-label">Month overview</div>
+  <div class="top-stats" id="topStats"></div>
+
+  <div class="section-label">Weekly breakdown</div>
+  <div class="week-grid" id="weekGrid"></div>
+
+  <div class="section-label">Trend</div>
+  <div class="chart-wrap">
+    <div class="legend">
+      <span><span class="dot" style="background:#1D9E75"></span>NK profit</span>
+      <span><span class="dot" style="background:#378ADD"></span>Acting</span>
+      <span><span class="dot" style="background:#7F77DD"></span>Surveys</span>
+      <span><span class="dot" style="background:#888780"></span>Other</span>
+      <span><span class="dash-line"></span>&nbsp;Weekly target</span>
+    </div>
+    <div style="position:relative;height:260px"><canvas id="chart" role="img" aria-label="Weekly stacked income chart"></canvas></div>
+  </div>
+
+  <div class="section-label">Export</div>
+  <div class="actions-row">
+    <button class="action-btn" onclick="exportMD()">Download weekly MD</button>
+    <button class="action-btn" onclick="exportMonthMD()">Download month summary MD</button>
+    <button class="action-btn danger" onclick="resetToken()">Disconnect GitHub</button>
+  </div>
+
+  <div class="section-label">Monthly costs</div>
+  <div class="costs-wrap">
+    <div class="costs-hdr" id="costsHdr" onclick="toggleCosts()">
+      <h2>Business overhead</h2>
+      <div style="display:flex;align-items:center">
+        <span class="badge">$576/mo + Meta</span>
+        <span class="chevron">&#9660;</span>
+      </div>
+    </div>
+    <div class="costs-body" id="costsBody">
+      <div class="cgroup">
+        <div class="cgroup-hdr" id="ai-hdr" onclick="toggleGroup('ai')">
+          <span class="name"><span class="chev2">&#9654;</span>AI Tools</span>
+          <span class="amt">$176 / mo</span>
+        </div>
+        <div class="citems" id="ai-items">
+          <div class="citem"><span class="k">ChatGPT</span><span class="v">$20 / mo</span></div>
+          <div class="citem"><span class="k">Claude</span><span class="v">$100 / mo</span></div>
+          <div class="citem"><span class="k">Midjourney</span><span class="v">$30 / mo</span></div>
+          <div class="citem"><span class="k">Higgs</span><span class="v">$26 / mo</span></div>
+        </div>
+      </div>
+      <div class="cgroup">
+        <div class="cgroup-hdr" id="mkt-hdr" onclick="toggleGroup('mkt')">
+          <span class="name"><span class="chev2">&#9654;</span>Marketing &amp; Platform</span>
+          <span class="amt">$400 / mo</span>
+        </div>
+        <div class="citems" id="mkt-items">
+          <div class="citem"><span class="k">Shopify</span><span class="v">$300 / mo</span></div>
+          <div class="citem"><span class="k">Klaviyo</span><span class="v">$100 / mo</span></div>
+        </div>
+      </div>
+      <div class="cgroup">
+        <div class="cgroup-hdr" id="meta-hdr" onclick="toggleGroup('meta')">
+          <span class="name"><span class="chev2">&#9654;</span>Meta Ads</span>
+          <span class="amt" id="metaLabel">variable</span>
+        </div>
+        <div class="citems" id="meta-items">
+          <div class="citem"><span class="k">Daily budget</span><span class="v">$50 / day</span></div>
+          <div class="citem"><span class="k">Actual this period</span><span class="v" id="metaActual">—</span></div>
+        </div>
+      </div>
+      <div class="cdivider"></div>
+      <div class="ctotal"><span>Fixed / mo</span><span>$576</span></div>
+      <div class="ctotal" style="margin-top:6px">
+        <span style="font-size:12px;font-weight:400;color:#888780">Meta actual to date</span>
+        <span style="font-size:12px;color:#888780" id="metaTotal">—</span>
+      </div>
+      <p class="cnote">AI tools are business overhead tracked separately from NK weekly profit. NK profit = (Shopify revenue × 76.2% gross margin) minus Meta spend, Shopify ($75/wk), and Klaviyo ($25/wk).</p>
+    </div>
+  </div>
+
+  <div class="section-label">Log a new week</div>
+  <div class="add-wrap">
+    <div class="form-grid">
+      <div class="field full"><label>Week dates</label><input id="fLabel" placeholder="Apr 13–19" /></div>
+      <div class="field"><label>Shopify gross revenue</label><input id="fRev" type="number" placeholder="0" oninput="calcPreview()" /></div>
+      <div class="field"><label>Meta ad spend (actual)</label><input id="fMeta" type="number" placeholder="350" oninput="calcPreview()" /></div>
+      <div class="field"><label>Acting / background</label><input id="fAct" type="number" placeholder="0" /></div>
+      <div class="field"><label>Surveys / research</label><input id="fSurv" type="number" placeholder="0" /></div>
+      <div class="field"><label>Other income</label><input id="fOther" type="number" placeholder="0" /></div>
+    </div>
+    <div class="preview" id="preview">Enter revenue and Meta spend to see the NK profit breakdown.</div>
+    <button class="submit" onclick="addWeek()">Add week</button>
+  </div>
+
+</div>
+
+<script>
+const GIST_ID = '8ed900047db9a6d5a819abb42f5b98bb';
+const GIST_FILE = 'income-data.json';
+const TARGET = 1250, SWK = 75, KWK = 25, MARGIN = 0.762;
+
+let weeks = [];
+let chartInst = null;
+let token = localStorage.getItem('gh_token');
+
+// --- Auth ---
+function saveToken() {
+  const t = document.getElementById('tokenInput').value.trim();
+  if (!t.startsWith('ghp_') && !t.startsWith('github_pat_')) {
+    document.getElementById('setupError').style.display = 'block';
+    return;
+  }
+  localStorage.setItem('gh_token', t);
+  token = t;
+  document.getElementById('setupScreen').classList.remove('show');
+  init();
+}
+
+function resetToken() {
+  if (!confirm('Disconnect GitHub? Your data stays in the Gist but you will need to re-enter your token.')) return;
+  localStorage.removeItem('gh_token');
+  token = null;
+  document.getElementById('setupScreen').classList.add('show');
+}
+
+// --- Gist API ---
+async function loadFromGist() {
+  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+    headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' }
+  });
+  if (!res.ok) throw new Error('Load failed');
+  const data = await res.json();
+  const content = data.files[GIST_FILE]?.content || '[]';
+  return JSON.parse(content);
+}
+
+async function saveToGist(data) {
+  setSync('saving');
+  const res = await fetch(`https://api.github.com/gists/${GIST_ID}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `token ${token}`,
+      Accept: 'application/vnd.github.v3+json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(data, null, 2) } } })
+  });
+  if (!res.ok) { setSync('error'); throw new Error('Save failed'); }
+  setSync('saved');
+}
+
+function setSync(state) {
+  const el = document.getElementById('syncStatus');
+  el.className = 'sync-status ' + state;
+  el.textContent = state === 'saving' ? 'saving...' : state === 'error' ? 'save failed' : 'synced';
+}
+
+// --- Init ---
+async function init() {
+  document.getElementById('loadingScreen').classList.add('show');
+  try {
+    weeks = await loadFromGist();
+    if (!weeks.length) {
+      weeks = [
+        { label: 'Week 1\nMar 31–Apr 6', nk: 418, acting: 0, surveys: 100, other: 300, meta: 245, rev: 1129 },
+        { label: 'Week 2\nApr 6–Apr 12', nk: 1421, acting: 252, surveys: 75, other: 0, meta: 338, rev: 2439 }
+      ];
+      await saveToGist(weeks);
+    }
+  } catch(e) {
+    console.error(e);
+    setSync('error');
+  }
+  document.getElementById('loadingScreen').classList.remove('show');
+  render();
+}
+
+// --- Render ---
+function fmt(n) { return '$' + Math.round(Math.abs(n)).toLocaleString(); }
+function fsign(n) { return (n >= 0 ? '+' : '-') + fmt(n); }
+
+function render() {
+  renderStats();
+  renderCards();
+  renderChart();
+  renderCosts();
+}
+
+function renderStats() {
+  const tots = weeks.map(w => w.nk + w.acting + w.surveys + w.other);
+  const mtd = tots.reduce((a, b) => a + b, 0);
+  const pct = Math.min(100, Math.round(mtd / 5000 * 100));
+  const weeklyCard = weeks.length > 0 ? tots[tots.length - 1] : 0;
+  const lastVar = weeklyCard - TARGET;
+  document.getElementById('topStats').innerHTML = `
+    <div class="stat-card">
+      <div class="label">Month to date</div>
+      <div class="val">${fmt(mtd)}</div>
+      <div class="sub">${pct}% of $5,000 &nbsp;·&nbsp; ${fmt(5000 - mtd)} to go</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Weeks tracked</div>
+      <div class="val">${weeks.length} <span style="font-size:16px;color:#888780">of 4</span></div>
+      <div class="sub">Last week ${fmt(weeklyCard)} &nbsp;·&nbsp; <span class="${lastVar >= 0 ? 'pos' : 'neg'}">${fsign(lastVar)} vs target</span></div>
+    </div>
+  `;
+}
+
+function renderCards() {
+  const grid = document.getElementById('weekGrid');
+  grid.innerHTML = '';
+  for (let i = 0; i < 4; i++) {
+    const w = weeks[i];
+    const d = document.createElement('div');
+    if (!w) {
+      d.className = 'week-card empty';
+      d.innerHTML = `<div class="wk-label">Week ${i + 1}</div><div class="empty-msg">Not yet logged</div>`;
+    } else {
+      d.className = 'week-card';
+      const tot = w.nk + w.acting + w.surveys + w.other;
+      const vr = tot - TARGET;
+      const sl = w.label.replace('\n', ' ');
+      const rows = [
+        ['NK profit', fmt(w.nk)],
+        w.acting ? ['Acting', fmt(w.acting)] : null,
+        w.surveys ? ['Surveys', fmt(w.surveys)] : null,
+        w.other ? ['Other', fmt(w.other)] : null,
+      ].filter(Boolean);
+      d.innerHTML = `
+        <button class="del-btn" onclick="delWeek(${i})">✕</button>
+        <div class="wk-label">${sl}</div>
+        ${rows.map(([k, v]) => `<div class="wrow"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
+        <div class="wtotal"><span class="k">Total</span><span class="v ${vr >= 0 ? 'pos' : 'neg'}">${fmt(tot)}</span></div>
+        <div class="wvar ${vr >= 0 ? 'pos' : 'neg'}">${fsign(vr)} vs target</div>
+      `;
+    }
+    grid.appendChild(d);
+  }
+}
+
+function renderChart() {
+  const goalPlugin = {
+    id: 'goal',
+    afterDraw(c) {
+      const { ctx, scales: { x, y } } = c;
+      const yp = y.getPixelForValue(TARGET);
+      ctx.save(); ctx.setLineDash([6, 4]); ctx.strokeStyle = '#D85A30'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x.left, yp); ctx.lineTo(x.right, yp); ctx.stroke(); ctx.restore();
+    }
+  };
+  if (chartInst) chartInst.destroy();
+  chartInst = new Chart(document.getElementById('chart'), {
+    type: 'bar', plugins: [goalPlugin],
+    data: {
+      labels: weeks.map(w => w.label.split('\n')),
+      datasets: [
+        { label: 'NK', data: weeks.map(w => w.nk), backgroundColor: '#1D9E75' },
+        { label: 'Acting', data: weeks.map(w => w.acting), backgroundColor: '#378ADD' },
+        { label: 'Surveys', data: weeks.map(w => w.surveys), backgroundColor: '#7F77DD' },
+        { label: 'Other', data: weeks.map(w => w.other), backgroundColor: '#888780' },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { footer: items => 'Total: $' + Math.round(items.reduce((s, i) => s + i.parsed.y, 0)).toLocaleString() } } },
+      scales: {
+        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 }, color: '#888780', autoSkip: false } },
+        y: { stacked: true, beginAtZero: true, ticks: { callback: v => '$' + v.toLocaleString(), font: { size: 11 }, color: '#888780' }, grid: { color: 'rgba(0,0,0,0.05)' } }
+      }
+    }
+  });
+}
+
+function renderCosts() {
+  const tm = weeks.reduce((s, w) => s + (w.meta || 0), 0);
+  document.getElementById('metaLabel').textContent = tm ? fmt(tm) + ' to date' : 'variable';
+  document.getElementById('metaActual').textContent = tm ? fmt(tm) + ' to date' : '—';
+  document.getElementById('metaTotal').textContent = tm ? fmt(tm) : '—';
+}
+
+// --- UI toggles ---
+function toggleCosts() {
+  document.getElementById('costsHdr').classList.toggle('open');
+  document.getElementById('costsBody').classList.toggle('open');
+}
+function toggleGroup(id) {
+  document.getElementById(id + '-hdr').classList.toggle('open2');
+  document.getElementById(id + '-items').classList.toggle('open');
+}
+
+// --- Form ---
+function calcPreview() {
+  const rev = parseFloat(document.getElementById('fRev').value) || 0;
+  const meta = parseFloat(document.getElementById('fMeta').value) || 0;
+  if (!rev) { document.getElementById('preview').textContent = 'Enter revenue and Meta spend to see the NK profit breakdown.'; return; }
+  const gross = rev * MARGIN;
+  const costs = meta + SWK + KWK;
+  const net = Math.round(gross - costs);
+  document.getElementById('preview').innerHTML =
+    `Revenue <strong>${fmt(rev)}</strong> × 76.2% = <strong>${fmt(gross)}</strong> gross &nbsp;|&nbsp; ` +
+    `Meta <strong>${fmt(meta)}</strong> + Shopify <strong>${fmt(SWK)}</strong> + Klaviyo <strong>${fmt(KWK)}</strong> = <strong>${fmt(costs)}</strong><br>` +
+    `<strong style="font-size:13px">NK net profit: ${fmt(net)}</strong>`;
+}
+
+async function addWeek() {
+  const label = document.getElementById('fLabel').value.trim();
+  const rev = parseFloat(document.getElementById('fRev').value) || 0;
+  const meta = parseFloat(document.getElementById('fMeta').value) || 0;
+  const acting = parseFloat(document.getElementById('fAct').value) || 0;
+  const surveys = parseFloat(document.getElementById('fSurv').value) || 0;
+  const other = parseFloat(document.getElementById('fOther').value) || 0;
+  if (!label || !rev) { alert('Add a week label and Shopify revenue.'); return; }
+  const nk = Math.round((rev * MARGIN) - meta - SWK - KWK);
+  weeks.push({ label: 'Week ' + (weeks.length + 1) + '\n' + label, nk, acting, surveys, other, meta, rev });
+  ['fLabel', 'fRev', 'fMeta', 'fAct', 'fSurv', 'fOther'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('preview').textContent = 'Enter revenue and Meta spend to see the NK profit breakdown.';
+  render();
+  await saveToGist(weeks);
+}
+
+async function delWeek(i) {
+  if (!confirm('Remove this week?')) return;
+  weeks.splice(i, 1);
+  weeks = weeks.map((w, idx) => ({ ...w, label: w.label.replace(/^Week \d+/, 'Week ' + (idx + 1)) }));
+  render();
+  await saveToGist(weeks);
+}
+
+// --- MD Export ---
+function exportMD() {
+  if (!weeks.length) { alert('No weeks to export yet.'); return; }
+  const w = weeks[weeks.length - 1];
+  const tot = w.nk + w.acting + w.surveys + w.other;
+  const vr = tot - TARGET;
+  const sl = w.label.replace('\n', ' ');
+  const lines = [
+    `# Weekly Income Review`,
+    ``,
+    `**${sl}**`,
+    ``,
+    `## Nikaukai`,
+    ``,
+    `Shopify revenue: $${w.rev?.toLocaleString() || '—'}`,
+    `Meta spend: $${w.meta?.toLocaleString() || '—'}`,
+    `NK net profit: $${w.nk.toLocaleString()}`,
+    ``,
+    `## Other Income`,
+    ``,
+    `Acting: $${w.acting || 0}`,
+    `Surveys: $${w.surveys || 0}`,
+    `Other: $${w.other || 0}`,
+    ``,
+    `## Totals`,
+    ``,
+    `Weekly total: $${tot.toLocaleString()}`,
+    `Weekly target: $${TARGET.toLocaleString()}`,
+    `Variance: ${vr >= 0 ? '+' : ''}$${vr.toLocaleString()}`,
+    ``,
+    `## Notes`,
+    ``,
+    ``,
+  ];
+  download(sl.replace(/[^a-z0-9]/gi, '-').toLowerCase() + '.md', lines.join('\n'));
+}
+
+function exportMonthMD() {
+  if (!weeks.length) { alert('No weeks to export yet.'); return; }
+  const mtd = weeks.reduce((s, w) => s + w.nk + w.acting + w.surveys + w.other, 0);
+  const lines = [
+    `# Monthly Income Summary`,
+    ``,
+    `**${weeks.length} weeks tracked**`,
+    ``,
+    `| Week | NK | Acting | Surveys | Other | Total | vs Target |`,
+    `|------|-----|--------|---------|-------|-------|-----------|`,
+    ...weeks.map(w => {
+      const tot = w.nk + w.acting + w.surveys + w.other;
+      const vr = tot - TARGET;
+      const sl = w.label.replace('\n', ' ');
+      return `| ${sl} | $${w.nk} | $${w.acting || 0} | $${w.surveys || 0} | $${w.other || 0} | $${tot} | ${vr >= 0 ? '+' : ''}$${vr} |`;
+    }),
+    ``,
+    `**Month to date: $${mtd.toLocaleString()} of $5,000 goal (${Math.round(mtd / 5000 * 100)}%)**`,
+    ``,
+    `## Monthly Overhead`,
+    ``,
+    `Fixed: $576/mo (AI tools $176 + Shopify $300 + Klaviyo $100)`,
+    `Meta: $${weeks.reduce((s, w) => s + (w.meta || 0), 0).toLocaleString()} (actual)`,
+    ``,
+    `## Notes`,
+    ``,
+    ``,
+  ];
+  download('month-summary-' + new Date().toISOString().slice(0, 7) + '.md', lines.join('\n'));
+}
+
+function download(filename, content) {
+  const a = document.createElement('a');
+  a.href = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(content);
+  a.download = filename;
+  a.click();
+}
+
+// --- Boot ---
+if (!token) {
+  document.getElementById('setupScreen').classList.add('show');
+} else {
+  init();
+}
+</script>
+</body>
+</html>
