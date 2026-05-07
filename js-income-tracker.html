@@ -147,7 +147,7 @@ button.submit:hover{background:#444441}
 
 <div class="container">
 
-  <div class="section-label">Month overview</div>
+  <div class="section-label">Block overview</div>
   <div class="top-stats" id="topStats"></div>
 
   <div class="section-label">Weekly breakdown</div>
@@ -163,6 +163,11 @@ button.submit:hover{background:#444441}
       <span><span class="dash-line"></span>&nbsp;Weekly target</span>
     </div>
     <div style="position:relative;height:260px"><canvas id="chart" role="img" aria-label="Weekly stacked income chart"></canvas></div>
+  </div>
+
+  <div id="prevWrap" style="display:none">
+    <div class="section-label">Previous weeks</div>
+    <div id="prevGrid"></div>
   </div>
 
   <div class="section-label">Export</div>
@@ -244,6 +249,10 @@ button.submit:hover{background:#444441}
 const GIST_ID = '8ed900047db9a6d5a819abb42f5b98bb';
 const GIST_FILE = 'income-data.json';
 const TARGET = 1250, SWK = 75, KWK = 25, MARGIN = 0.762;
+const BLOCK1_START = new Date(2026, 3, 27);
+const BLOCK_WEEKS = 4;
+const DAY_MS = 86400000;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 let weeks = [];
 let chartInst = null;
@@ -324,63 +333,138 @@ async function init() {
 // --- Render ---
 function fmt(n) { return '$' + Math.round(Math.abs(n)).toLocaleString(); }
 function fsign(n) { return (n >= 0 ? '+' : '-') + fmt(n); }
+function totalOf(w) { return w.nk + w.acting + w.surveys + w.other; }
+
+function stripWeekPrefix(label) { return label.replace(/^Week \d+\n/, ''); }
+
+function parseWeekStart(label) {
+  const s = stripWeekPrefix(label);
+  const re = /([A-Za-z]+)\s+(\d+)/g;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    const idx = MONTHS.findIndex(mo => mo.toLowerCase() === m[1].slice(0, 3).toLowerCase());
+    if (idx >= 0) return new Date(2026, idx, parseInt(m[2], 10));
+  }
+  return null;
+}
+
+function blockIndexOf(date) {
+  const days = Math.floor((date - BLOCK1_START) / DAY_MS);
+  return Math.floor(days / (7 * BLOCK_WEEKS));
+}
+
+function blockWeekStart(blockIdx, weekInBlock) {
+  return new Date(BLOCK1_START.getTime() + (blockIdx * BLOCK_WEEKS + weekInBlock) * 7 * DAY_MS);
+}
+
+function formatWeekRange(start) {
+  const end = new Date(start.getTime() + 6 * DAY_MS);
+  if (start.getMonth() === end.getMonth()) return `${MONTHS[start.getMonth()]} ${start.getDate()}–${end.getDate()}`;
+  return `${MONTHS[start.getMonth()]} ${start.getDate()}–${MONTHS[end.getMonth()]} ${end.getDate()}`;
+}
+
+function getCurrentBlockIndex() {
+  const t = new Date(); t.setHours(0, 0, 0, 0);
+  return Math.max(0, blockIndexOf(t));
+}
+
+function partitionByBlock() {
+  const cur = getCurrentBlockIndex();
+  const current = [], previous = [];
+  weeks.forEach((w, i) => {
+    const start = parseWeekStart(w.label);
+    const entry = { w, i, start };
+    if (start && blockIndexOf(start) === cur) current.push(entry);
+    else previous.push(entry);
+  });
+  const cmp = (a, b) => {
+    const at = a.start ? a.start.getTime() : -Infinity;
+    const bt = b.start ? b.start.getTime() : -Infinity;
+    return bt !== at ? bt - at : b.i - a.i;
+  };
+  current.sort(cmp);
+  previous.sort(cmp);
+  return { current, previous, currentBlockIndex: cur };
+}
 
 function render() {
   renderStats();
   renderCards();
   renderChart();
+  renderPrevious();
   renderCosts();
 }
 
 function renderStats() {
-  const tots = weeks.map(w => w.nk + w.acting + w.surveys + w.other);
-  const mtd = tots.reduce((a, b) => a + b, 0);
-  const pct = Math.min(100, Math.round(mtd / 5000 * 100));
-  const weeklyCard = weeks.length > 0 ? tots[tots.length - 1] : 0;
-  const lastVar = weeklyCard - TARGET;
+  const { current } = partitionByBlock();
+  const btd = current.reduce((s, x) => s + totalOf(x.w), 0);
+  const pct = Math.min(100, Math.round(btd / 5000 * 100));
+  const last = current.length ? [...current].sort((a, b) => a.start - b.start).pop().w : null;
+  const lastTot = last ? totalOf(last) : 0;
+  const lastVar = lastTot - TARGET;
   document.getElementById('topStats').innerHTML = `
     <div class="stat-card">
-      <div class="label">Month to date</div>
-      <div class="val">${fmt(mtd)}</div>
-      <div class="sub">${pct}% of $5,000 &nbsp;·&nbsp; ${fmt(5000 - mtd)} to go</div>
+      <div class="label">Block to date</div>
+      <div class="val">${fmt(btd)}</div>
+      <div class="sub">${pct}% of $5,000 &nbsp;·&nbsp; ${fmt(5000 - btd)} to go</div>
     </div>
     <div class="stat-card">
       <div class="label">Weeks tracked</div>
-      <div class="val">${weeks.length} <span style="font-size:16px;color:#888780">of 4</span></div>
-      <div class="sub">Last week ${fmt(weeklyCard)} &nbsp;·&nbsp; <span class="${lastVar >= 0 ? 'pos' : 'neg'}">${fsign(lastVar)} vs target</span></div>
+      <div class="val">${current.length} <span style="font-size:16px;color:#888780">of 4</span></div>
+      <div class="sub">${last
+        ? `Last week ${fmt(lastTot)} &nbsp;·&nbsp; <span class="${lastVar >= 0 ? 'pos' : 'neg'}">${fsign(lastVar)} vs target</span>`
+        : 'No weeks logged in this block yet'}</div>
     </div>
   `;
+}
+
+function buildWeekCard(entry) {
+  const w = entry.w;
+  const tot = totalOf(w);
+  const vr = tot - TARGET;
+  const sl = stripWeekPrefix(w.label).replace('\n', ' ');
+  const rows = [
+    ['NK profit', fmt(w.nk)],
+    w.acting ? ['Acting', fmt(w.acting)] : null,
+    w.surveys ? ['Surveys', fmt(w.surveys)] : null,
+    w.other ? ['Other', fmt(w.other)] : null,
+  ].filter(Boolean);
+  const d = document.createElement('div');
+  d.className = 'week-card';
+  d.innerHTML = `
+    <button class="del-btn" onclick="delWeek(${entry.i})">✕</button>
+    <div class="wk-label">${sl}</div>
+    ${rows.map(([k, v]) => `<div class="wrow"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
+    <div class="wtotal"><span class="k">Total</span><span class="v ${vr >= 0 ? 'pos' : 'neg'}">${fmt(tot)}</span></div>
+    <div class="wvar ${vr >= 0 ? 'pos' : 'neg'}">${fsign(vr)} vs target</div>
+  `;
+  return d;
+}
+
+function buildEmptyCard(rangeText) {
+  const d = document.createElement('div');
+  d.className = 'week-card empty';
+  d.innerHTML = `<div class="wk-label">${rangeText}</div><div class="empty-msg">Not yet logged</div>`;
+  return d;
 }
 
 function renderCards() {
   const grid = document.getElementById('weekGrid');
   grid.innerHTML = '';
-  for (let i = 0; i < 4; i++) {
-    const w = weeks[i];
-    const d = document.createElement('div');
-    if (!w) {
-      d.className = 'week-card empty';
-      d.innerHTML = `<div class="wk-label">Week ${i + 1}</div><div class="empty-msg">Not yet logged</div>`;
-    } else {
-      d.className = 'week-card';
-      const tot = w.nk + w.acting + w.surveys + w.other;
-      const vr = tot - TARGET;
-      const sl = w.label.replace('\n', ' ');
-      const rows = [
-        ['NK profit', fmt(w.nk)],
-        w.acting ? ['Acting', fmt(w.acting)] : null,
-        w.surveys ? ['Surveys', fmt(w.surveys)] : null,
-        w.other ? ['Other', fmt(w.other)] : null,
-      ].filter(Boolean);
-      d.innerHTML = `
-        <button class="del-btn" onclick="delWeek(${i})">✕</button>
-        <div class="wk-label">${sl}</div>
-        ${rows.map(([k, v]) => `<div class="wrow"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
-        <div class="wtotal"><span class="k">Total</span><span class="v ${vr >= 0 ? 'pos' : 'neg'}">${fmt(tot)}</span></div>
-        <div class="wvar ${vr >= 0 ? 'pos' : 'neg'}">${fsign(vr)} vs target</div>
-      `;
-    }
-    grid.appendChild(d);
+  const { current, currentBlockIndex } = partitionByBlock();
+
+  const bySlot = new Map();
+  current.forEach(x => {
+    const days = Math.round((x.start - BLOCK1_START) / DAY_MS);
+    const wb = (days - currentBlockIndex * BLOCK_WEEKS * 7) / 7;
+    if (wb >= 0 && wb < BLOCK_WEEKS) bySlot.set(wb, x);
+  });
+
+  for (let wb = 0; wb < BLOCK_WEEKS; wb++) {
+    const entry = bySlot.get(wb);
+    grid.appendChild(entry
+      ? buildWeekCard(entry)
+      : buildEmptyCard(formatWeekRange(blockWeekStart(currentBlockIndex, wb))));
   }
 }
 
@@ -395,15 +479,18 @@ function renderChart() {
     }
   };
   if (chartInst) chartInst.destroy();
+  const { current } = partitionByBlock();
+  const sorted = [...current].sort((a, b) => a.start - b.start);
+  const cw = sorted.map(x => x.w);
   chartInst = new Chart(document.getElementById('chart'), {
     type: 'bar', plugins: [goalPlugin],
     data: {
-      labels: weeks.map(w => w.label.split('\n')),
+      labels: cw.map(w => stripWeekPrefix(w.label).split('\n')),
       datasets: [
-        { label: 'NK', data: weeks.map(w => w.nk), backgroundColor: '#1D9E75' },
-        { label: 'Acting', data: weeks.map(w => w.acting), backgroundColor: '#378ADD' },
-        { label: 'Surveys', data: weeks.map(w => w.surveys), backgroundColor: '#7F77DD' },
-        { label: 'Other', data: weeks.map(w => w.other), backgroundColor: '#888780' },
+        { label: 'NK', data: cw.map(w => w.nk), backgroundColor: '#1D9E75' },
+        { label: 'Acting', data: cw.map(w => w.acting), backgroundColor: '#378ADD' },
+        { label: 'Surveys', data: cw.map(w => w.surveys), backgroundColor: '#7F77DD' },
+        { label: 'Other', data: cw.map(w => w.other), backgroundColor: '#888780' },
       ]
     },
     options: {
@@ -415,6 +502,29 @@ function renderChart() {
       }
     }
   });
+}
+
+function renderPrevious() {
+  const { previous } = partitionByBlock();
+  const wrap = document.getElementById('prevWrap');
+  const container = document.getElementById('prevGrid');
+  if (!previous.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  container.innerHTML = '';
+
+  const sorted = [...previous].sort((a, b) => {
+    const at = a.start ? a.start.getTime() : -Infinity;
+    const bt = b.start ? b.start.getTime() : -Infinity;
+    return bt !== at ? bt - at : b.i - a.i;
+  });
+
+  for (let i = 0; i < sorted.length; i += BLOCK_WEEKS) {
+    const chunk = sorted.slice(i, i + BLOCK_WEEKS).reverse();
+    const row = document.createElement('div');
+    row.className = 'week-grid';
+    chunk.forEach(entry => row.appendChild(buildWeekCard(entry)));
+    container.appendChild(row);
+  }
 }
 
 function renderCosts() {
@@ -457,7 +567,7 @@ async function addWeek() {
   const other = parseFloat(document.getElementById('fOther').value) || 0;
   if (!label || !rev) { alert('Add a week label and Shopify revenue.'); return; }
   const nk = Math.round((rev * MARGIN) - meta - SWK - KWK);
-  weeks.push({ label: 'Week ' + (weeks.length + 1) + '\n' + label, nk, acting, surveys, other, meta, rev });
+  weeks.push({ label, nk, acting, surveys, other, meta, rev });
   ['fLabel', 'fRev', 'fMeta', 'fAct', 'fSurv', 'fOther'].forEach(id => document.getElementById(id).value = '');
   document.getElementById('preview').textContent = 'Enter revenue and Meta spend to see the NK profit breakdown.';
   render();
@@ -467,7 +577,6 @@ async function addWeek() {
 async function delWeek(i) {
   if (!confirm('Remove this week?')) return;
   weeks.splice(i, 1);
-  weeks = weeks.map((w, idx) => ({ ...w, label: w.label.replace(/^Week \d+/, 'Week ' + (idx + 1)) }));
   render();
   await saveToGist(weeks);
 }
