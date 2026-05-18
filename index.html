@@ -65,6 +65,15 @@ header span{color:#888780;font-size:12px}
 .wcc{margin-top:10px;padding:10px 12px;background:#1D9E75;border-radius:6px;display:flex;justify-content:space-between;align-items:center}
 .wcc .k{font-size:11px;color:#E6F5EE;letter-spacing:.04em;text-transform:uppercase;font-weight:500}
 .wcc .v{font-size:15px;color:#fff;font-weight:600}
+.wdist-label{font-size:10px;font-weight:500;color:#B4B2A9;letter-spacing:.08em;text-transform:uppercase;margin-top:14px;margin-bottom:4px}
+.dist-wrap{background:#fff;border-radius:10px;padding:24px;margin-bottom:24px}
+.dist-wrap .row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #F1EFE8}
+.dist-wrap .row:last-of-type{border-bottom:none}
+.dist-wrap .row .k{font-size:13px;color:#5F5E5A}
+.dist-wrap .row .v{font-size:14px;font-weight:500}
+.dist-wrap input{border:1px solid #D3D1C7;border-radius:6px;padding:6px 10px;font-size:14px;background:#FAFAF8;outline:none;width:120px;text-align:right}
+.dist-wrap input:focus{border-color:#1D9E75}
+.dist-note{font-size:12px;color:#888780;line-height:1.6;margin-top:14px}
 .block-card{margin-bottom:14px}
 .block-hdr{background:#fff;border-radius:10px;padding:16px 20px;cursor:pointer;user-select:none}
 .block-hdr:hover{background:#FAFAF8}
@@ -236,6 +245,23 @@ button.submit:hover{background:#444441}
     </div>
   </div>
 
+  <div class="section-label">Profit distribution</div>
+  <div class="dist-wrap">
+    <div class="row">
+      <span class="k">Family allocation</span>
+      <span class="v">$<input id="fGlobalFamily" type="number" value="1250" onchange="updateFamilyAllocation()" /></span>
+    </div>
+    <div class="row">
+      <span class="k">Tax + buffer</span>
+      <span class="v">25% of remainder</span>
+    </div>
+    <div class="row">
+      <span class="k">Credit card payment</span>
+      <span class="v">75% of remainder</span>
+    </div>
+    <p class="dist-note">Each week, the family allocation transfers to joint savings. Whatever's left after that splits 25/75: a quarter to your tax + business operating buffer (held separately), three quarters to the Chase business credit card. Weeks where income doesn't cover the family allocation show $0 for tax and CC — handle those manually.</p>
+  </div>
+
   <div class="section-label">Log a new week</div>
   <div class="add-wrap">
     <div class="form-grid">
@@ -245,7 +271,6 @@ button.submit:hover{background:#444441}
       <div class="field"><label>Acting / background</label><input id="fAct" type="number" placeholder="0" /></div>
       <div class="field"><label>Surveys / research</label><input id="fSurv" type="number" placeholder="0" /></div>
       <div class="field"><label>Other income</label><input id="fOther" type="number" placeholder="0" /></div>
-      <div class="field full"><label>Family allocation (weekly transfer to joint savings)</label><input id="fFamily" type="number" value="1250" /></div>
     </div>
     <div class="preview" id="preview">Enter revenue and Meta spend to see the NK profit breakdown.</div>
     <button class="submit" onclick="addWeek()">Add week</button>
@@ -271,12 +296,14 @@ const GIST_FILE = 'income-data.json';
 const TARGET = 1375, SWK = 75, KWK = 25, MARGIN = 0.762;
 const MONTHLY_GOAL = 5500;
 const DEFAULT_FAMILY = 1250;
+const TAX_RATE = 0.25;
 const BLOCK1_START = new Date(2026, 3, 27);
 const BLOCK_WEEKS = 4;
 const DAY_MS = 86400000;
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 let weeks = [];
+let globalFamily = DEFAULT_FAMILY;
 let chartInst = null;
 let token = localStorage.getItem('gh_token');
 
@@ -308,7 +335,13 @@ async function loadFromGist() {
   if (!res.ok) throw new Error('Load failed');
   const data = await res.json();
   const content = data.files[GIST_FILE]?.content || '[]';
-  return JSON.parse(content);
+  const parsed = JSON.parse(content);
+  if (Array.isArray(parsed)) return { weeks: parsed, settings: {} };
+  return { weeks: parsed.weeks || [], settings: parsed.settings || {} };
+}
+
+function buildPayload() {
+  return { weeks, settings: { familyAllocation: globalFamily } };
 }
 
 const IS_SANDBOX = location.hostname === 'localhost' || location.hostname === '127.0.0.1' || location.protocol === 'file:';
@@ -344,13 +377,16 @@ async function init() {
   if (IS_SANDBOX) document.getElementById('sandboxBadge').style.display = '';
   document.getElementById('loadingScreen').classList.add('show');
   try {
-    weeks = await loadFromGist();
+    const loaded = await loadFromGist();
+    weeks = loaded.weeks;
+    globalFamily = typeof loaded.settings.familyAllocation === 'number' ? loaded.settings.familyAllocation : DEFAULT_FAMILY;
+    document.getElementById('fGlobalFamily').value = globalFamily;
     if (!weeks.length) {
       weeks = [
         { label: 'Week 1\nMar 31–Apr 6', nk: 418, acting: 0, surveys: 100, other: 300, meta: 245, rev: 1129 },
         { label: 'Week 2\nApr 6–Apr 12', nk: 1421, acting: 252, surveys: 75, other: 0, meta: 338, rev: 2439 }
       ];
-      await saveToGist(weeks);
+      await saveToGist(buildPayload());
     }
   } catch(e) {
     console.error(e);
@@ -484,22 +520,26 @@ function renderStats() {
   `;
 }
 
+function distributionOf(tot) {
+  const fam = globalFamily;
+  const remainder = Math.max(0, tot - fam);
+  const tax = Math.round(remainder * TAX_RATE);
+  const cc = Math.round(remainder * (1 - TAX_RATE));
+  return { fam, tax, cc };
+}
+
 function buildWeekCard(entry) {
   const w = entry.w;
   const tot = totalOf(w);
   const vr = tot - TARGET;
-  const hasFamily = typeof w.family === 'number';
   const sl = canonicalLabel(w.label);
+  const { fam, tax, cc } = distributionOf(tot);
   const rows = [
     ['NK profit', fmt(w.nk)],
     w.acting ? ['Acting', fmt(w.acting)] : null,
     w.surveys ? ['Surveys', fmt(w.surveys)] : null,
     w.other ? ['Other', fmt(w.other)] : null,
   ].filter(Boolean);
-  const allocBlock = hasFamily
-    ? `<div class="wfam"><span class="k">Family allocation</span><span class="v">${fmt(w.family)}</span></div>
-       <div class="wcc"><span class="k">Credit card payment</span><span class="v">${fmt(tot - w.family)}</span></div>`
-    : '';
   const d = document.createElement('div');
   d.className = 'week-card';
   d.innerHTML = `
@@ -508,7 +548,10 @@ function buildWeekCard(entry) {
     ${rows.map(([k, v]) => `<div class="wrow"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
     <div class="wtotal"><span class="k">Total</span><span class="v ${vr >= 0 ? 'pos' : 'neg'}">${fmt(tot)}</span></div>
     <div class="wvar ${vr >= 0 ? 'pos' : 'neg'}">${fsign(vr)} vs target</div>
-    ${allocBlock}
+    <div class="wdist-label">Distribution</div>
+    <div class="wfam"><span class="k">Family</span><span class="v">${fmt(fam)}</span></div>
+    <div class="wfam"><span class="k">Tax + buffer (25%)</span><span class="v">${fmt(tax)}</span></div>
+    <div class="wcc"><span class="k">Credit card payment</span><span class="v">${fmt(cc)}</span></div>
   `;
   return d;
 }
@@ -680,27 +723,33 @@ async function addWeek() {
   const acting = parseFloat(document.getElementById('fAct').value) || 0;
   const surveys = parseFloat(document.getElementById('fSurv').value) || 0;
   const other = parseFloat(document.getElementById('fOther').value) || 0;
-  const familyRaw = document.getElementById('fFamily').value;
-  const family = familyRaw === '' ? DEFAULT_FAMILY : (parseFloat(familyRaw) || 0);
   if (!rawLabel) { alert('Add week dates.'); return; }
   const range = parseDateRange(rawLabel);
   if (!range) { alert(`Could not read "${rawLabel}". Try formats like "Apr 20-26", "April 20 to 26", or "Mar 31-Apr 6".`); return; }
   if (!rev) { alert('Add Shopify revenue.'); return; }
   const label = formatRange(range.start, range.end);
   const nk = Math.round((rev * MARGIN) - meta - SWK - KWK);
-  weeks.push({ label, nk, acting, surveys, other, meta, rev, family });
+  weeks.push({ label, nk, acting, surveys, other, meta, rev });
   ['fLabel', 'fRev', 'fMeta', 'fAct', 'fSurv', 'fOther'].forEach(id => document.getElementById(id).value = '');
-  document.getElementById('fFamily').value = DEFAULT_FAMILY;
   document.getElementById('preview').textContent = 'Enter revenue and Meta spend to see the NK profit breakdown.';
   render();
-  await saveToGist(weeks);
+  await saveToGist(buildPayload());
 }
 
 async function delWeek(i) {
   if (!confirm('Remove this week?')) return;
   weeks.splice(i, 1);
   render();
-  await saveToGist(weeks);
+  await saveToGist(buildPayload());
+}
+
+async function updateFamilyAllocation() {
+  const v = parseFloat(document.getElementById('fGlobalFamily').value);
+  if (isNaN(v) || v < 0) { document.getElementById('fGlobalFamily').value = globalFamily; return; }
+  globalFamily = Math.round(v);
+  document.getElementById('fGlobalFamily').value = globalFamily;
+  render();
+  await saveToGist(buildPayload());
 }
 
 // --- MD Export ---
@@ -709,7 +758,7 @@ function exportMD() {
   const w = weeks[weeks.length - 1];
   const tot = w.nk + w.acting + w.surveys + w.other;
   const vr = tot - TARGET;
-  const hasFamily = typeof w.family === 'number';
+  const { fam, tax, cc } = distributionOf(tot);
   const sl = canonicalLabel(w.label);
   const lines = [
     `# Weekly Income Review`,
@@ -734,13 +783,12 @@ function exportMD() {
     `Weekly target: $${TARGET.toLocaleString()}`,
     `Variance: ${vr >= 0 ? '+' : ''}$${vr.toLocaleString()}`,
     ``,
-    ...(hasFamily ? [
-      `## Allocation`,
-      ``,
-      `Family allocation: $${w.family.toLocaleString()}`,
-      `Credit card payment: $${(tot - w.family).toLocaleString()}`,
-      ``,
-    ] : []),
+    `## Profit distribution`,
+    ``,
+    `Family allocation: $${fam.toLocaleString()}`,
+    `Tax + buffer (25%): $${tax.toLocaleString()}`,
+    `Credit card payment (75%): $${cc.toLocaleString()}`,
+    ``,
     `## Notes`,
     ``,
     ``,
@@ -756,16 +804,14 @@ function exportMonthMD() {
     ``,
     `**${weeks.length} weeks tracked**`,
     ``,
-    `| Week | NK | Acting | Surveys | Other | Total | vs Target | Family | CC payment |`,
-    `|------|-----|--------|---------|-------|-------|-----------|--------|------------|`,
+    `| Week | NK | Acting | Surveys | Other | Total | vs Target | Family | Tax+buf | CC payment |`,
+    `|------|-----|--------|---------|-------|-------|-----------|--------|---------|------------|`,
     ...weeks.map(w => {
       const tot = w.nk + w.acting + w.surveys + w.other;
       const vr = tot - TARGET;
-      const hasFam = typeof w.family === 'number';
-      const famCell = hasFam ? `$${w.family}` : '—';
-      const ccCell = hasFam ? `$${tot - w.family}` : '—';
+      const { fam, tax, cc } = distributionOf(tot);
       const sl = canonicalLabel(w.label);
-      return `| ${sl} | $${w.nk} | $${w.acting || 0} | $${w.surveys || 0} | $${w.other || 0} | $${tot} | ${vr >= 0 ? '+' : ''}$${vr} | ${famCell} | ${ccCell} |`;
+      return `| ${sl} | $${w.nk} | $${w.acting || 0} | $${w.surveys || 0} | $${w.other || 0} | $${tot} | ${vr >= 0 ? '+' : ''}$${vr} | $${fam} | $${tax} | $${cc} |`;
     }),
     ``,
     `**Month to date: $${mtd.toLocaleString()} of $${MONTHLY_GOAL.toLocaleString()} goal (${Math.round(mtd / MONTHLY_GOAL * 100)}%)**`,
