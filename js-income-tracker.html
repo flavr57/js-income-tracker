@@ -65,6 +65,8 @@ header span{color:#888780;font-size:12px}
 .wcc{margin-top:10px;padding:10px 12px;background:#1D9E75;border-radius:6px;display:flex;justify-content:space-between;align-items:center}
 .wcc .k{font-size:11px;color:#E6F5EE;letter-spacing:.04em;text-transform:uppercase;font-weight:500}
 .wcc .v{font-size:15px;color:#fff;font-weight:600}
+.wreimb{margin-top:10px;padding-top:10px;border-top:1px dashed #D3D1C7}
+.wreimb .k{color:#5F5E5A}
 .wdist-label{font-size:10px;font-weight:500;color:#B4B2A9;letter-spacing:.08em;text-transform:uppercase;margin-top:14px;margin-bottom:4px}
 .dist-wrap{background:#fff;border-radius:10px;padding:24px;margin-bottom:24px}
 .dist-wrap .row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #F1EFE8}
@@ -248,18 +250,22 @@ button.submit:hover{background:#444441}
   <div class="section-label">Profit distribution</div>
   <div class="dist-wrap">
     <div class="row">
+      <span class="k">CC reimbursement</span>
+      <span class="v">Shopify rev − NK profit (auto, hard cost)</span>
+    </div>
+    <div class="row">
       <span class="k">Family allocation</span>
       <span class="v">$<input id="fGlobalFamily" type="number" value="1250" onchange="updateFamilyAllocation()" /></span>
     </div>
     <div class="row">
       <span class="k">Tax + buffer</span>
-      <span class="v">25% of remainder</span>
+      <span class="v">25% of (NK profit + side − family)</span>
     </div>
     <div class="row">
-      <span class="k">Credit card payment</span>
-      <span class="v">75% of remainder</span>
+      <span class="k">Additional CC payment</span>
+      <span class="v">75% of (NK profit + side − family)</span>
     </div>
-    <p class="dist-note">Each week, the family allocation transfers to joint savings. Whatever's left after that splits 25/75: a quarter to your tax + business operating buffer (held separately), three quarters to the Chase business credit card. Weeks where income doesn't cover the family allocation show $0 for tax and CC — handle those manually.</p>
+    <p class="dist-note">Reimbursement covers what hit the card this week running NK — COGS, Meta, Shopify, Klaviyo — calculated automatically as Shopify revenue minus NK profit. It's a hard cost, not a choice. Family allocation transfers from business checking to joint savings. What's left of NK profit + side income (after family) splits 25/75: tax + operating buffer vs. additional debt paydown on the Chase card. Total to the card each week = reimbursement + additional payment.</p>
   </div>
 
   <div class="section-label">Log a new week</div>
@@ -528,12 +534,18 @@ function distributionOf(tot) {
   return { fam, tax, cc };
 }
 
+function reimbursementOf(w) {
+  return Math.max(0, Math.round((w.rev || 0) - (w.nk || 0)));
+}
+
 function buildWeekCard(entry) {
   const w = entry.w;
   const tot = totalOf(w);
   const vr = tot - TARGET;
   const sl = canonicalLabel(w.label);
   const { fam, tax, cc } = distributionOf(tot);
+  const reimb = reimbursementOf(w);
+  const totalCC = reimb + cc;
   const rows = [
     ['NK profit', fmt(w.nk)],
     w.acting ? ['Acting', fmt(w.acting)] : null,
@@ -551,7 +563,9 @@ function buildWeekCard(entry) {
     <div class="wdist-label">Distribution</div>
     <div class="wfam"><span class="k">Family</span><span class="v">${fmt(fam)}</span></div>
     <div class="wfam"><span class="k">Tax + buffer (25%)</span><span class="v">${fmt(tax)}</span></div>
-    <div class="wcc"><span class="k">Credit card payment</span><span class="v">${fmt(cc)}</span></div>
+    <div class="wfam"><span class="k">Additional CC payment (75%)</span><span class="v">${fmt(cc)}</span></div>
+    <div class="wfam wreimb"><span class="k">CC reimbursement (hard cost)</span><span class="v">${fmt(reimb)}</span></div>
+    <div class="wcc"><span class="k">Total CC payment</span><span class="v">${fmt(totalCC)}</span></div>
   `;
   return d;
 }
@@ -759,6 +773,8 @@ function exportMD() {
   const tot = w.nk + w.acting + w.surveys + w.other;
   const vr = tot - TARGET;
   const { fam, tax, cc } = distributionOf(tot);
+  const reimb = reimbursementOf(w);
+  const totalCC = reimb + cc;
   const sl = canonicalLabel(w.label);
   const lines = [
     `# Weekly Income Review`,
@@ -787,7 +803,9 @@ function exportMD() {
     ``,
     `Family allocation: $${fam.toLocaleString()}`,
     `Tax + buffer (25%): $${tax.toLocaleString()}`,
-    `Credit card payment (75%): $${cc.toLocaleString()}`,
+    `Additional CC payment (75%): $${cc.toLocaleString()}`,
+    `CC reimbursement (hard cost): $${reimb.toLocaleString()}`,
+    `**Total CC payment: $${totalCC.toLocaleString()}**`,
     ``,
     `## Notes`,
     ``,
@@ -804,14 +822,16 @@ function exportMonthMD() {
     ``,
     `**${weeks.length} weeks tracked**`,
     ``,
-    `| Week | NK | Acting | Surveys | Other | Total | vs Target | Family | Tax+buf | CC payment |`,
-    `|------|-----|--------|---------|-------|-------|-----------|--------|---------|------------|`,
+    `| Week | NK | Acting | Surveys | Other | Total | vs Target | Family | Tax+buf | Add'l CC | Reimburse | Total CC |`,
+    `|------|-----|--------|---------|-------|-------|-----------|--------|---------|----------|-----------|----------|`,
     ...weeks.map(w => {
       const tot = w.nk + w.acting + w.surveys + w.other;
       const vr = tot - TARGET;
       const { fam, tax, cc } = distributionOf(tot);
+      const reimb = reimbursementOf(w);
+      const totalCC = reimb + cc;
       const sl = canonicalLabel(w.label);
-      return `| ${sl} | $${w.nk} | $${w.acting || 0} | $${w.surveys || 0} | $${w.other || 0} | $${tot} | ${vr >= 0 ? '+' : ''}$${vr} | $${fam} | $${tax} | $${cc} |`;
+      return `| ${sl} | $${w.nk} | $${w.acting || 0} | $${w.surveys || 0} | $${w.other || 0} | $${tot} | ${vr >= 0 ? '+' : ''}$${vr} | $${fam} | $${tax} | $${cc} | $${reimb} | $${totalCC} |`;
     }),
     ``,
     `**Month to date: $${mtd.toLocaleString()} of $${MONTHLY_GOAL.toLocaleString()} goal (${Math.round(mtd / MONTHLY_GOAL * 100)}%)**`,
