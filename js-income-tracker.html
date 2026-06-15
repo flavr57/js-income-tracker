@@ -514,7 +514,9 @@ function renderStats() {
     <div class="stat-card">
       <div class="label">Block to date</div>
       <div class="val">${fmt(btd)}</div>
-      <div class="sub">${pct}% of ${fmt(MONTHLY_GOAL)} &nbsp;·&nbsp; ${fmt(MONTHLY_GOAL - btd)} to go</div>
+      <div class="sub">${pct}% of ${fmt(MONTHLY_GOAL)} &nbsp;·&nbsp; ${btd >= MONTHLY_GOAL
+        ? `<span class="pos">${fsign(btd - MONTHLY_GOAL)} over target</span>`
+        : `${fmt(MONTHLY_GOAL - btd)} to go`}</div>
     </div>
     <div class="stat-card">
       <div class="label">Weeks tracked</div>
