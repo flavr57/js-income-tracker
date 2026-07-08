@@ -200,7 +200,7 @@ button.submit:hover{background:#444441}
     <div class="costs-hdr" id="costsHdr" onclick="toggleCosts()">
       <h2>Business overhead</h2>
       <div style="display:flex;align-items:center">
-        <span class="badge">$576/mo + Meta</span>
+        <span class="badge">$606/mo + Meta</span>
         <span class="chevron">&#9660;</span>
       </div>
     </div>
@@ -220,11 +220,11 @@ button.submit:hover{background:#444441}
       <div class="cgroup">
         <div class="cgroup-hdr" id="mkt-hdr" onclick="toggleGroup('mkt')">
           <span class="name"><span class="chev2">&#9654;</span>Marketing &amp; Platform</span>
-          <span class="amt">$400 / mo</span>
+          <span class="amt">$430 / mo</span>
         </div>
         <div class="citems" id="mkt-items">
           <div class="citem"><span class="k">Shopify</span><span class="v">$300 / mo</span></div>
-          <div class="citem"><span class="k">Klaviyo</span><span class="v">$100 / mo</span></div>
+          <div class="citem"><span class="k">Klaviyo</span><span class="v">$130 / mo</span></div>
         </div>
       </div>
       <div class="cgroup">
@@ -238,12 +238,12 @@ button.submit:hover{background:#444441}
         </div>
       </div>
       <div class="cdivider"></div>
-      <div class="ctotal"><span>Fixed / mo</span><span>$576</span></div>
+      <div class="ctotal"><span>Fixed / mo</span><span>$606</span></div>
       <div class="ctotal" style="margin-top:6px">
         <span style="font-size:12px;font-weight:400;color:#888780">Meta actual to date</span>
         <span style="font-size:12px;color:#888780" id="metaTotal">—</span>
       </div>
-      <p class="cnote">AI tools are business overhead tracked separately from NK weekly profit. NK profit = (Shopify revenue × 76.2% gross margin) minus Meta spend, Shopify ($75/wk), and Klaviyo ($25/wk).</p>
+      <p class="cnote">AI tools are business overhead tracked separately from NK weekly profit. NK profit = (Shopify revenue × 76.2% gross margin) minus Meta spend, Shopify ($75/wk), and Klaviyo ($32.50/wk).</p>
     </div>
   </div>
 
@@ -299,7 +299,7 @@ button.submit:hover{background:#444441}
 <script>
 const GIST_ID = '8ed900047db9a6d5a819abb42f5b98bb';
 const GIST_FILE = 'income-data.json';
-const TARGET = 1375, SWK = 75, KWK = 25, MARGIN = 0.762;
+const TARGET = 1375, SWK = 75, KWK = 32.5, MARGIN = 0.762;
 const MONTHLY_GOAL = 5500;
 const DEFAULT_FAMILY = 1250;
 const TAX_RATE = 0.25;
@@ -840,7 +840,7 @@ function exportMonthMD() {
     ``,
     `## Monthly Overhead`,
     ``,
-    `Fixed: $576/mo (AI tools $176 + Shopify $300 + Klaviyo $100)`,
+    `Fixed: $606/mo (AI tools $176 + Shopify $300 + Klaviyo $130)`,
     `Meta: $${weeks.reduce((s, w) => s + (w.meta || 0), 0).toLocaleString()} (actual)`,
     ``,
     `## Notes`,
